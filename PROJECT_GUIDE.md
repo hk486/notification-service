@@ -19,6 +19,13 @@
    - [Day 5 — SMS & Push Notification Providers](#day-5--sms--push-notification-providers)
    - [Day 6 — Redis Idempotency & Rate Limiting](#day-6--redis-idempotency--rate-limiting)
    - [Day 7 — Resilience4j Circuit Breaker & Retry](#day-7--resilience4j-circuit-breaker--retry)
+   - [Day 8 — Template Engine](#day-8--template-engine)
+   - [Day 9 — SendGrid Fallback Provider](#day-9--sendgrid-fallback-provider)
+   - [Day 10 — UserPreference Enforcement](#day-10--userpreference-enforcement)
+   - [Day 11 — Prometheus Metrics & Grafana Dashboard](#day-11--prometheus-metrics--grafana-dashboard)
+   - [Day 12 — Comprehensive Integration Tests](#day-12--comprehensive-integration-tests-with-testcontainers)
+   - [Day 13 — Dockerize the Application](#day-13--dockerize-the-application)
+   - [Day 14 — GitHub Actions CI/CD Pipeline](#day-14--github-actions-cicd-pipeline)
 6. [How a Notification Flows End-to-End](#6-how-a-notification-flows-end-to-end)
 7. [Database Design](#7-database-design)
 8. [Kafka Topics](#8-kafka-topics)
@@ -896,7 +903,7 @@ firebase:
 
 ---
 
-## Days Remaining (Completed)
+## Days 8-14 — Advanced Features & DevOps (Completed)
 
 ---
 
