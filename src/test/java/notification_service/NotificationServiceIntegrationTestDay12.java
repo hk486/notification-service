@@ -133,7 +133,7 @@ class NotificationServiceIntegrationTestDay12 {
                 .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.error").value("Duplicate request"))
-                .andExpect(jsonPath("$.message").containsString("idempotency key"));
+                .andExpect(jsonPath("$.message").value(containsString("idempotency key")));
     }
 
     @Test
@@ -241,7 +241,7 @@ class NotificationServiceIntegrationTestDay12 {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(sixthRequest)))
                 .andExpect(status().isTooManyRequests())
-                .andExpect(jsonPath("$.message").containsString("rate limit"));
+                .andExpect(jsonPath("$.message").value(containsString("rate limit")));
     }
 
     // ──────────────────────────────────────────────────────────────────────────────
