@@ -1,0 +1,139 @@
+spring:
+  datasource:
+    url: jdbc:mysql://localhost:3307/notification_service
+    username: user
+    password: password
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: true
+    open-in-view: false
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      group-id: notification-group
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+kafka:
+  topics:
+    high: notification.high
+    medium: notification.medium
+    low: notification.low
+    dlq: notification.dlq
+
+# ── Redis Guardrails ──────────────────────────────────────────────────────────
+notification:
+  idempotency:
+    ttl-hours: 24           # how long to remember an idempotency key (24 h)
+  rate-limit:
+    max-per-minute: 5       # max notifications per user per channel per minute
+    window-seconds: 60      # sliding window size
+
+aws:
+  ses:
+    enabled: false                        # set to true when real AWS creds are provided
+    from-email: noreply@yourdomain.com
+  region: ${AWS_REGION:us-east-1}
+  access-key: ${AWS_ACCESS_KEY:YOUR_AWS_ACCESS_KEY}
+  secret-key: ${AWS_SECRET_KEY:YOUR_AWS_SECRET_KEY}
+
+# ── Twilio SMS ──────────────────────────────────────────────────────────────
+twilio:
+  enabled: true                         # set to true when real Twilio creds are provided
+  account-sid: ${TWILIO_ACCOUNT_SID:YOUR_TWILIO_ACCOUNT_SID}
+  auth-token: ${TWILIO_AUTH_TOKEN:YOUR_TWILIO_AUTH_TOKEN}
+  from-number: "${TWILIO_PHONE_NUMBER:+1234567890}"             # Your Twilio phone number
+
+# ── Firebase Cloud Messaging ─────────────────────────────────────────────────
+firebase:
+  enabled: false                          # set to true when service-account JSON is available
+  service-account-path: classpath:firebase-service-account.json
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics,circuitbreakers,circuitbreakerevents
+  endpoint:
+    health:
+      show-details: always
+    circuitbreakers:
+      enabled: true
+
+# ── Resilience4j: Circuit Breaker + Retry ─────────────────────────────────────
+#
+# Circuit Breaker — think of it like a trip switch on your wall:
+#   CLOSED  = current flows normally (requests go through)
+#   OPEN    = switch tripped (requests blocked, fallback runs immediately)
+#   HALF-OPEN = try a few test requests to see if the service recovered
+#
+# Retry — before declaring failure, try again with increasing delays:
+#   attempt 1 fails → wait 500ms → attempt 2 fails → wait 1s → attempt 3 fails →
+#   give up → circuit breaker counts this as one failure
+#
+resilience4j:
+  circuitbreaker:
+    instances:
+      email-cb:
+        sliding-window-size: 5             # evaluate the last 5 calls
+        minimum-number-of-calls: 3         # need at least 3 calls before tripping
+        failure-rate-threshold: 50         # trip if ≥50% of calls failed
+        wait-duration-in-open-state: 10s   # stay OPEN for 10 s then try HALF-OPEN
+        permitted-number-of-calls-in-half-open-state: 2
+        register-health-indicator: true
+      sms-cb:
+        sliding-window-size: 5
+        minimum-number-of-calls: 3
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 2
+        register-health-indicator: true
+      push-cb:
+        sliding-window-size: 5
+        minimum-number-of-calls: 3
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 2
+        register-health-indicator: true
+
+  retry:
+    instances:
+      email-retry:
+        max-attempts: 3                    # try up to 3 times total
+        wait-duration: 500ms               # start with 500 ms delay
+        enable-exponential-backoff: true   # double the delay each retry
+        exponential-backoff-multiplier: 2  # 500ms → 1s → 2s
+      sms-retry:
+        max-attempts: 3
+        wait-duration: 500ms
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 2
+      push-retry:
+        max-attempts: 3
+        wait-duration: 500ms
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 2
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+  api-docs:
+    path: /v3/api-docs

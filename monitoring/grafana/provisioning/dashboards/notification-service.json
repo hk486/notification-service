@@ -1,0 +1,115 @@
+{
+  "title": "Notification Service",
+  "uid": "notification-service",
+  "schemaVersion": 36,
+  "version": 1,
+  "refresh": "10s",
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Accepted (total)",
+      "gridPos": { "x": 0, "y": 0, "w": 4, "h": 4 },
+      "targets": [{
+        "expr": "sum(notifications_accepted_total)",
+        "legendFormat": "Accepted"
+      }]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Sent (total)",
+      "gridPos": { "x": 4, "y": 0, "w": 4, "h": 4 },
+      "targets": [{
+        "expr": "sum(notifications_sent_total)",
+        "legendFormat": "Sent"
+      }]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Failed (total)",
+      "gridPos": { "x": 8, "y": 0, "w": 4, "h": 4 },
+      "targets": [{
+        "expr": "sum(notifications_failed_total)",
+        "legendFormat": "Failed"
+      }]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Skipped (total)",
+      "gridPos": { "x": 12, "y": 0, "w": 4, "h": 4 },
+      "targets": [{
+        "expr": "sum(notifications_skipped_total)",
+        "legendFormat": "Skipped"
+      }]
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "DLQ Published (total)",
+      "gridPos": { "x": 16, "y": 0, "w": 4, "h": 4 },
+      "targets": [{
+        "expr": "sum(notifications_dlq_published_total)",
+        "legendFormat": "DLQ"
+      }]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Accepted rate by channel (per min)",
+      "gridPos": { "x": 0, "y": 4, "w": 12, "h": 8 },
+      "targets": [{
+        "expr": "sum by (channel) (rate(notifications_accepted_total[1m])) * 60",
+        "legendFormat": "{{channel}}"
+      }]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Sent vs Failed vs Skipped (per min)",
+      "gridPos": { "x": 12, "y": 4, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "sum(rate(notifications_sent_total[1m])) * 60",
+          "legendFormat": "Sent"
+        },
+        {
+          "expr": "sum(rate(notifications_failed_total[1m])) * 60",
+          "legendFormat": "Failed"
+        },
+        {
+          "expr": "sum(rate(notifications_skipped_total[1m])) * 60",
+          "legendFormat": "Skipped"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Rejected — Duplicate & Rate-limited (per min)",
+      "gridPos": { "x": 0, "y": 12, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "sum(rate(notifications_rejected_duplicate_total[1m])) * 60",
+          "legendFormat": "Duplicate"
+        },
+        {
+          "expr": "sum(rate(notifications_rejected_ratelimit_total[1m])) * 60",
+          "legendFormat": "Rate-limited"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Send duration p99 by channel (ms)",
+      "gridPos": { "x": 12, "y": 12, "w": 12, "h": 8 },
+      "targets": [{
+        "expr": "histogram_quantile(0.99, sum by (channel, le) (rate(notifications_send_duration_milliseconds_bucket[1m])))",
+        "legendFormat": "p99 {{channel}}"
+      }]
+    }
+  ]
+}

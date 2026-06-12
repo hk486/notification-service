@@ -1,0 +1,2 @@
+ALTER TABLE notification_logs
+    MODIFY COLUMN status ENUM('PENDING', 'SENT', 'FAILED', 'DUPLICATE', 'SKIPPED') NOT NULL;

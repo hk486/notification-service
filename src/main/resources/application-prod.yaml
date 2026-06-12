@@ -1,0 +1,60 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Production profile — activate with: --spring.profiles.active=prod
+#
+# All sensitive values are read from environment variables.
+# Set them in your deployment environment (Docker, K8s secrets, ECS task def…).
+# Never commit real credentials to source control.
+# ─────────────────────────────────────────────────────────────────────────────
+
+spring:
+  datasource:
+    url: ${DATABASE_URL}                     # jdbc:mysql://<host>:3306/notification_service
+    username: ${DATABASE_USER}
+    password: ${DATABASE_PASSWORD}
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}           # leave empty if Redis has no auth
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
+
+# ── AWS SES (Email) ───────────────────────────────────────────────────────────
+# Preferred: run on EC2/ECS with an IAM role that has ses:SendEmail permission.
+# Then leave aws.access-key and aws.secret-key unset — AwsConfig will use the
+# default credential chain (IAM instance role) automatically.
+#
+# If you must use static keys (local prod testing, GitHub Actions):
+#   set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY env vars — AwsConfig reads
+#   them via ${aws.access-key} → environment variable binding.
+aws:
+  ses:
+    enabled: true
+    from-email: ${SES_FROM_EMAIL}            # e.g. noreply@yourdomain.com
+  region: ${AWS_REGION:us-east-1}
+  access-key: ${AWS_ACCESS_KEY_ID:}          # blank → use IAM role
+  secret-key: ${AWS_SECRET_ACCESS_KEY:}      # blank → use IAM role
+
+# ── Twilio (SMS) ──────────────────────────────────────────────────────────────
+# Get credentials from: https://console.twilio.com → Account → API keys
+twilio:
+  enabled: true
+  account-sid: ${TWILIO_ACCOUNT_SID}
+  auth-token: ${TWILIO_AUTH_TOKEN}
+  from-number: ${TWILIO_FROM_NUMBER}         # E.164 format: +15005550006
+
+# ── Firebase Cloud Messaging (Push) ──────────────────────────────────────────
+# Get JSON from: Firebase Console → Project Settings → Service Accounts
+#   → Generate New Private Key
+# Mount the JSON file into the container and set FIREBASE_SERVICE_ACCOUNT_PATH.
+firebase:
+  enabled: true
+  service-account-path: ${FIREBASE_SERVICE_ACCOUNT_PATH:classpath:firebase-service-account.json}
+
+# ── Logging ───────────────────────────────────────────────────────────────────
+logging:
+  level:
+    notification_service: INFO
+    org.springframework: WARN
