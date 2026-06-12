@@ -896,18 +896,326 @@ firebase:
 
 ---
 
-## Days Remaining (Planned)
-
-| Day | Topic |
-|-----|-------|
-| 8 | Template engine — render `{placeholder}` variables from `NotificationTemplate` DB records |
-| 9 | SendGrid fallback — if AWS SES fails, switch to SendGrid automatically |
-| 10 | UserPreference enforcement — respect `enabled=false` and DND hours |
-| 11 | Prometheus + Grafana — visualise notification metrics on a dashboard |
-| 12 | Unit + Integration tests — full test coverage with Testcontainers |
-| 13 | Dockerize the app — build a Docker image for the service itself |
-| 14 | CI/CD pipeline — GitHub Actions to build, test, and deploy automatically |
+## Days Remaining (Completed)
 
 ---
 
-*Generated: May 2026 | Built with Spring Boot 3.5.14, Java 17, Apache Kafka 7.4.0, Redis 7.0, MySQL 8.0*
+### Day 8 — Template Engine
+
+**Goal:** Allow callers to send notifications using pre-built templates instead of writing message bodies every time.
+
+**What was created:**
+- **`NotificationTemplate` entity** — stores template name, body, and channel
+- **`TemplateService`** — renders templates by replacing `{placeholder}` with values from `templateData` map
+- **Updated `NotificationController`** — accepts `templateName` and `templateData` in the request
+
+**Template resolution logic:**
+```
+1. If templateName provided → lookup in DB by (name + channel)
+                            → replace {key} tokens with templateData values
+2. If raw message provided  → use it directly
+3. If neither provided      → throw 400 Bad Request
+```
+
+**Example:**
+```json
+{
+  "userId": "user@example.com",
+  "channel": "EMAIL",
+  "priority": "HIGH",
+  "templateName": "OTP_EMAIL",
+  "templateData": {
+    "otp": "123456",
+    "expiry": "10 minutes"
+  }
+}
+```
+
+**Database queries:**
+```sql
+-- Pre-seeded templates
+INSERT INTO notification_templates (name, body, channel) VALUES
+  ('OTP_EMAIL', 'Your OTP is {otp}. Valid for {expiry}.', 'EMAIL'),
+  ('ORDER_CONFIRMATION_EMAIL', 'Your order #{order_id} has been confirmed.', 'EMAIL'),
+  ('WELCOME_SMS', 'Welcome {name}! Thanks for signing up.', 'SMS');
+```
+
+---
+
+### Day 9 — SendGrid Fallback Provider
+
+**Goal:** Add SendGrid as a fallback email provider. If AWS SES fails (circuit breaker opens), automatically switch to SendGrid.
+
+**What was created:**
+- **`SendGridEmailProvider`** — implements `EmailProvider` interface, uses SendGrid SDK
+- **`SendGridConfig`** — Spring configuration that creates SendGrid bean when enabled
+- **Updated `pom.xml`** — added SendGrid SDK dependency (v4.10.2)
+
+**How it works:**
+```
+1. AWS SES is primary (enabled by default if credentials present)
+2. SES fails repeatedly → circuit breaker opens
+3. Next request automatically routes to SendGrid via fallback
+4. If SendGrid also fails → both circuit breakers open → 503 Service Unavailable
+
+Circuit Breaker → Retry (3 attempts with backoff) → Primary Provider (SES)
+                                                        │ fails 5x in 10s
+                                                        ▼
+                                                    Fallback (SendGrid)
+```
+
+**Configuration:**
+```yaml
+# application.yaml
+aws:
+  ses:
+    enabled: true
+    from-email: verified@yourdomain.com
+    region: us-east-1
+    access-key: ${AWS_ACCESS_KEY}
+    secret-key: ${AWS_SECRET_KEY}
+
+sendgrid:
+  enabled: true
+  api-key: ${SENDGRID_API_KEY}  # from environment variable
+```
+
+**Setup:**
+1. Create SendGrid account (sendgrid.com)
+2. Generate API key
+3. Set environment variable: `export SENDGRID_API_KEY=SG.xxx...`
+
+---
+
+### Day 10 — UserPreference Enforcement
+
+**Goal:** Respect per-user settings — don't send notifications if the user disabled them, and respect "Do Not Disturb" (DND) hours.
+
+**What was created:**
+- **`UserPreferenceService`** — checks if notifications are allowed for a user
+- **Updated `NotificationDispatchService`** — queries user preferences before sending
+- **`UserPreference` entity** — stores enabled flag and DND time window
+
+**User Preference model:**
+```sql
+CREATE TABLE user_preferences (
+  user_id VARCHAR(255),
+  channel ENUM('EMAIL', 'SMS', 'PUSH'),
+  enabled BOOLEAN DEFAULT true,
+  dnd_start TIME,          -- Do Not Disturb start (e.g. 22:00)
+  dnd_end TIME,            -- Do Not Disturb end (e.g. 08:00)
+  PRIMARY KEY (user_id, channel)
+);
+```
+
+**Logic:**
+```
+Before sending:
+  1. Check user_preferences where user_id=? AND channel=?
+  2. If enabled = false → skip send, update status = SKIPPED
+  3. If enabled = true AND current_time in [dnd_start, dnd_end] → skip send, log reason
+  4. Otherwise → proceed with send
+
+Example:
+  User disabled EMAIL but enabled SMS → email requests 409 skipped
+  User has DND 22:00-08:00, sends at 23:30 → skipped until 08:00
+```
+
+---
+
+### Day 11 — Prometheus Metrics & Grafana Dashboard
+
+**Goal:** Visualize notification service health, throughput, and circuit breaker states on a Grafana dashboard.
+
+**What was created:**
+- **`NotificationMetrics`** — custom metrics using Micrometer/Prometheus
+- **Grafana dashboard JSON** — pre-built dashboard with 6 charts
+- **Prometheus scrape config** — updated to include notification service
+- **Health check endpoint** — `/actuator/health` shows all component statuses
+
+**Metrics exposed:**
+```
+# Notifications
+notification_sent_total{channel,provider}     — total sent
+notification_failed_total{channel,provider}   — total failed
+notification_queued_total{priority}           — queued (in Kafka)
+notification_duration_seconds{channel}        — latency from REST → DB update
+
+# Resilience4j Circuit Breaker (auto-exported)
+resilience4j.circuitbreaker.state{name}       — 1=CLOSED, 0.5=HALF-OPEN, 0=OPEN
+resilience4j.retry.calls{name}                — retry attempt counts
+
+# JVM & Tomcat (auto-exported)
+jvm_memory_used_bytes                         — heap usage
+jvm_gc_duration_seconds                       — garbage collection pauses
+tomcat_threads_active_current                 — active HTTP threads
+```
+
+**Grafana Dashboard:**
+1. **Sent Rate (5m avg)** — line chart of notifications/sec sent
+2. **Failed Rate (5m avg)** — line chart of notifications/sec failed
+3. **Email Circuit Breaker** — gauge 1=CLOSED (healthy), 0=OPEN (broken)
+4. **SMS Circuit Breaker** — gauge
+5. **Push Circuit Breaker** — gauge
+6. **Latency p99** — histogram of notification processing time
+
+**Access:**
+```bash
+# Prometheus metrics endpoint
+curl http://localhost:8080/actuator/prometheus
+
+# Health check
+curl http://localhost:8080/actuator/health
+
+# Grafana dashboard
+http://localhost:3000/d/notification-service-dashboard
+  (username: admin, password: admin)
+```
+
+---
+
+### Day 12 — Comprehensive Integration Tests with Testcontainers
+
+**Goal:** Test the entire system (API → DB → Kafka → Messaging) using containerized dependencies.
+
+**What was created:**
+- **`NotificationServiceIntegrationTestDay12`** — 4-layer test suite with Testcontainers
+- **Layer 1: Infrastructure** — MySQL, Kafka, Redis containers spin up for each test
+- **Layer 2: REST API** — test HTTP requests/responses, status codes
+- **Layer 3: Database Persistence** — verify data is saved to MySQL
+- **Layer 4: Messaging** — test Kafka message routing + consumer consumption
+
+**Test cases:**
+```java
+// Layer 2: REST API
+testSendEmailNotification()          // 202 ACCEPTED on valid request
+testDuplicateRequestRejected()       // 409 CONFLICT on idempotency key match
+testMissingRequiredField()           // 400 BAD REQUEST on missing userId
+testGetNotificationsByUser()         // retrieve notification history
+testRateLimitExceeded()              // 429 TOO MANY REQUESTS on 6th request/min
+
+// Layer 3: Database
+testNotificationPersistedToDatabase() // verify MySQL INSERT
+
+// Layer 1: Infrastructure
+testHealthCheck()                    // /actuator/health returns UP
+testCircuitBreakerMetrics()          // resilience4j metrics exposed
+```
+
+**Run tests:**
+```bash
+./mvnw test -Dtest=NotificationServiceIntegrationTestDay12
+```
+
+**Benefits of Testcontainers:**
+- No manual Docker commands before tests
+- Containers start/stop per test class
+- Ports dynamically assigned (no conflicts)
+- Easy to add new services (e.g. ElasticSearch, S3 mock)
+
+---
+
+### Day 13 — Dockerize the Application
+
+**Goal:** Build a production-grade Docker image for the notification service.
+
+**What was created:**
+- **`Dockerfile`** — multi-stage build (Builder → Runtime)
+- **`.dockerignore`** — excludes unnecessary files from build context
+
+**Dockerfile Strategy (Multi-Stage):**
+
+```dockerfile
+# Stage 1: Builder
+FROM eclipse-temurin:17-jdk AS builder
+  → Downloads dependencies (cached if pom.xml unchanged)
+  → Compiles source code
+  → Runs tests
+  → Creates JAR
+  → Extracts layers
+
+# Stage 2: Runtime (final image ~300MB instead of 700MB with full JDK)
+FROM eclipse-temurin:17-jre
+  → Copies only JAR + dependencies
+  → Exposes port 8080
+  → Configures health check
+  → Runs the app
+```
+
+**Build and run:**
+```bash
+# Build locally
+docker build -t notification-service:latest .
+
+# Run
+docker run -p 8080:8080 \
+  -e SPRING_KAFKA_BOOTSTRAPSERVERS=kafka:9092 \
+  -e SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/notification_service \
+  -e SPRING_DATA_REDIS_HOST=redis \
+  notification-service:latest
+
+# Or with docker-compose
+docker compose up -d
+
+# Check logs
+docker logs notification-service
+```
+
+**Image size optimization:**
+- Multi-stage eliminates build tools from final image
+- Separate layer copies for better cache invalidation
+- Spring Boot Layered JAR splits app/lib/dependencies for Docker efficiency
+
+---
+
+### Day 14 — GitHub Actions CI/CD Pipeline
+
+**Goal:** Automate building, testing, and deploying the notification service on every push.
+
+**What was created:**
+- **`.github/workflows/ci-cd.yml`** — GitHub Actions workflow with 6 jobs
+
+**Pipeline Jobs:**
+
+| Job | Trigger | Actions |
+|-----|---------|---------|
+| Build & Unit Tests | Every push | Compile, run unit tests, upload results |
+| Integration Tests | After build | Run full Testcontainers suite |
+| Code Quality | After build | Run Maven verify + SonarQube (optional) |
+| Docker Build & Push | main branch only | Build image, push to ghcr.io |
+| Security Scan | After Docker push | Trivy vulnerability scanning |
+| Deploy to Staging | After scan | Deploy to Kubernetes (if configured) |
+
+**Workflow:**
+```
+Push to main
+    ↓
+[Build & Unit Tests] ←┐
+[Integration Tests]   ├→ All pass?
+[Code Quality]        ←┘
+    ↓
+[Docker Build & Push] (push image to ghcr.io)
+    ↓
+[Security Scan] (scan for CVEs with Trivy)
+    ↓
+[Deploy to Staging] (kubectl apply / helm upgrade)
+```
+
+**Example artifact uploads:**
+- Unit test results → Actions artifacts
+- Integration test results → Actions artifacts
+- Sarif vulnerability report → GitHub Security tab
+
+**Access:**
+```
+Repository → Actions tab → ci-cd.yml workflow runs
+```
+
+**Required secrets (if deploying to cloud):**
+- `DOCKER_USERNAME` / `DOCKER_PASSWORD` → Container registry
+- `KUBECONFIG` → Kubernetes cluster credentials
+- `SLACK_WEBHOOK` → notifications (optional)
+
+---
+
+*Completed: May-June 2026 | Built with Spring Boot 3.5.14, Java 17, Apache Kafka 7.4.0, Docker, Kubernetes, GitHub Actions*

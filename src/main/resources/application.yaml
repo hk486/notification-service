@@ -67,6 +67,11 @@ firebase:
   enabled: false                          # set to true when service-account JSON is available
   service-account-path: classpath:firebase-service-account.json
 
+# ── Day 9: SendGrid Email Provider (Fallback) ────────────────────────────────
+sendgrid:
+  enabled: false                          # set to true to enable SendGrid fallback
+  api-key: ${SENDGRID_API_KEY}            # SendGrid API key from environment
+
 management:
   endpoints:
     web:

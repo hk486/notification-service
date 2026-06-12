@@ -1,0 +1,19 @@
+# Exclude these files from Docker build context
+node_modules/
+npm-debug.log
+.git
+.gitignore
+.dockerignore
+.DS_Store
+*.md
+target/
+.idea/
+*.iml
+.vscode/
+*.log
+*.swp
+*.swo
+*~
+.env
+.env.local
+.env.*.local
